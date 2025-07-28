@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -31,6 +31,8 @@ async function run() {
 
         // Database------:
         const donationCollection = client.db("foodResQ").collection("donations");
+        const requestCollection = client.db("foodResQ").collection("requests");
+        const userCollection = client.db("foodResQ").collection("users");
 
 
         // ----------------------------------////////////--------------------------------------------------
@@ -54,13 +56,118 @@ async function run() {
         });
 
 
-
         // POST /donations
         app.post("/donations", async (req, res) => {
             const donation = req.body;
             const result = await donationCollection.insertOne(donation);
             res.send(result);
         });
+
+        // get reausturant Donations
+        app.get('/donations/restaurant/:email', async (req, res) => {
+            const email = req.params.email;
+            const donations = await donationCollection.find({ restaurantEmail: email }).sort({ createdAt: -1 }).toArray();
+            res.send(donations);
+        });
+
+        // Delete reaustarunt given donations
+        app.delete('/donations/:id', async (req, res) => {
+            const id = req.params.id;
+            const result = await donationCollection.deleteOne({ _id: new ObjectId(id) });
+            res.send(result);
+        });
+
+        // Get latest donation request for showcase in home page
+        app.get("/requests/latest", async (req, res) => {
+            try {
+                const latest = await requestCollection
+                    .find({})
+                    .sort({ requestedAt: -1 }) // newest first
+                    .limit(6) // ✅ show only latest 6
+                    .toArray();
+
+                res.send(latest);
+            } catch (error) {
+                console.error("Error fetching latest charity requests:", error);
+                res.status(500).send({ message: "Server error" });
+            }
+        });
+
+        // Post user data after registered
+        app.post('/users', async (req, res) => {
+            const user = req.body;
+            const existing = await userCollection.findOne({ email: user.email });
+            if (existing) {
+                return res.send({ message: 'User already exists' });
+            }
+
+            const result = await userCollection.insertOne(user);
+            res.send(result);
+        });
+
+
+        app.get("/users/:email", async (req, res) => {
+            const email = req.params.email;
+            const user = await userCollection.findOne({ email });
+            res.send(user);
+        });
+
+        // For check user role
+        app.get('/users/role/:email', async (req, res) => {
+            const email = req.params.email;
+            const user = await userCollection.findOne({ email });
+            res.send({ role: user?.role || 'user' });
+        });
+
+        // Charity request 
+        app.post("/charity-requests", async (req, res) => {
+            const newRequest = req.body;
+            const existing = await charityRequestCollection.findOne({ userEmail: newRequest.userEmail });
+
+            if (existing) {
+                return res.send({ message: "Already requested." });
+            }
+
+            const result = await charityRequestCollection.insertOne(newRequest);
+            res.send(result);
+        });
+
+        // get charity requests
+        app.get("/charity-requests/:email", async (req, res) => {
+            const email = req.params.email;
+            const request = await charityRequestCollection.findOne({ userEmail: email });
+            res.send(request || {});
+        });
+
+        // Get card details 
+        app.get("/donations/:id", async (req, res) => {
+            const id = req.params.id;
+            const donation = await donationCollection.findOne({ _id: new ObjectId(id) });
+            res.send(donation);
+        });
+
+
+        // Get charity profile details
+        app.get("/requests/charity/:email", async (req, res) => {
+            const email = req.params.email;
+            const requests = await requestCollection
+                .find({ charityEmail: email })
+                .sort({ requestedAt: -1 })
+                .toArray();
+            res.send(requests);
+        });
+
+        app.get("/donations/received/:email", async (req, res) => {
+            const email = req.params.email;
+            const donations = await donationCollection
+                .find({ receivedBy: email }) // assuming you store this on pickup
+                .sort({ deliveredAt: -1 })
+                .toArray();
+            res.send(donations);
+        });
+
+
+
 
 
 
