@@ -33,6 +33,7 @@ async function run() {
         const donationCollection = client.db("foodResQ").collection("donations");
         const requestCollection = client.db("foodResQ").collection("requests");
         const userCollection = client.db("foodResQ").collection("users");
+        const charityRequestCollection = client.db("foodResQ").collection("CharityRequests");
 
 
         // ----------------------------------////////////--------------------------------------------------
@@ -43,7 +44,7 @@ async function run() {
         app.get("/donations/featured", async (req, res) => {
             try {
                 const featured = await donationCollection
-                    .find({ isFeatured: true })
+                    .find({ isFeatured: true, verification: "Verified" })
                     .sort({ createdAt: -1 }) // 👈 Newest first
                     .limit(6)
                     .toArray();
@@ -62,6 +63,56 @@ async function run() {
             const result = await donationCollection.insertOne(donation);
             res.send(result);
         });
+
+
+        // Admin manage donation page stuffs /////////Start///////////////////
+        app.get("/donations/all-admin", async (req, res) => {
+            const all = await donationCollection.find().sort({ createdAt: -1 }).toArray();
+            res.send(all);
+        });
+
+        app.patch("/donations/verify/:id", async (req, res) => {
+            const id = req.params.id;
+            const result = await donationCollection.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { verification: "Verified" } }
+            );
+            res.send(result);
+        });
+
+        app.patch("/donations/reject/:id", async (req, res) => {
+            const id = req.params.id;
+            const result = await donationCollection.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { verification: "Rejected" } }
+            );
+            res.send(result);
+        });
+
+        // For admin featured donation page
+        app.patch("/donations/feature/:id", async (req, res) => {
+            const id = req.params.id;
+            const { makeFeatured } = req.body;
+
+            const result = await donationCollection.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { isFeatured: makeFeatured } }
+            );
+
+            res.send(result);
+        });
+
+        app.get("/donations/verified", async (req, res) => {
+            const result = await donationCollection
+                .find({ verification: "Verified" })
+                .sort({ createdAt: -1 })
+                .toArray();
+
+            res.send(result);
+        });
+
+        // Admin manage donation page stuffs /////////End///////////////////
+
 
         // get reausturant Donations
         app.get('/donations/restaurant/:email', async (req, res) => {
@@ -119,7 +170,7 @@ async function run() {
             res.send({ role: user?.role || 'user' });
         });
 
-        // Charity request 
+        // Charity request ----------------------------------------------------------------------------
         app.post("/charity-requests", async (req, res) => {
             const newRequest = req.body;
             const existing = await charityRequestCollection.findOne({ userEmail: newRequest.userEmail });
@@ -137,6 +188,17 @@ async function run() {
             const email = req.params.email;
             const request = await charityRequestCollection.findOne({ userEmail: email });
             res.send(request || {});
+        });
+
+        // ----------------------------------------------------------------------------------------------
+
+        // Data for all donations page 
+        app.get("/donations/all", async (req, res) => {
+            const verified = await donationCollection
+                .find({ verification: "Verified" })
+                .sort({ createdAt: -1 })
+                .toArray();
+            res.send(verified);
         });
 
         // Get card details 
@@ -166,10 +228,23 @@ async function run() {
             res.send(donations);
         });
 
+        // For admin dasboard
+        app.get("/users", async (req, res) => {
+            const allUsers = await userCollection.find().toArray();
+            res.send(allUsers);
+        });
 
+        app.patch("/users/role/:email", async (req, res) => {
+            const email = req.params.email;
+            const { newRole } = req.body;
 
+            const result = await userCollection.updateOne(
+                { email },
+                { $set: { role: newRole } }
+            );
 
-
+            res.send(result);
+        });
 
 
 
