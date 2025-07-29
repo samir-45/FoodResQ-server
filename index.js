@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const admin = require("firebase-admin");
 const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const app = express();
@@ -9,6 +10,17 @@ const port = process.env.PORT || 5000;
 // Middlewares
 app.use(cors());
 app.use(express.json());
+
+
+
+const serviceAccount = require("./firebase-admin-key.json");
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+
+module.exports = admin;
+
 
 
 // ------------------------ ///////////////-----------------------------
@@ -43,10 +55,79 @@ async function run() {
 
         // ----------------------------------////////////--------------------------------------------------
 
+
+        // middleware/verifyFBToken.js
+        // const admin = require("../firebase"); // import admin
+
+        // const verifyFBToken = async (req, res, next) => {
+        //     const authHeaders = req.headers.authorization;
+        //     if (!authHeaders) {
+        //         return res.status(401).send({ message: "Unauthorized access" });
+        //     }
+
+        //     const token = authHeaders.split(" ")[1];
+
+        //     try {
+        //         const decoded = await admin.auth().verifyIdToken(token);
+        //         req.decoded = decoded; // Contains email, uid, etc.
+        //         next();
+        //     } catch (error) {
+        //         return res.status(403).send({ message: "Forbidden access" });
+        //     }
+        // };
+
+        // module.exports = verifyFBToken;
+
+        const verifyFBToken = async (req, res, next) => {
+            const authHeaders = req.headers.authorization;
+            if (!authHeaders) return res.status(401).send({ message: "Unauthorized access" });
+
+            const token = authHeaders.split(" ")[1];
+            if (!token) return res.status(401).send({ message: "Unauthorized access" });
+
+            try {
+                const decoded = await admin.auth().verifyIdToken(token);
+                req.decoded = decoded;
+                next();
+            } catch (error) {
+                return res.status(403).send({ message: "Forbidden access" });
+            }
+        };
+
+        const verifyAdmin = async (req, res, next) => {
+            const email = req.decoded.email;
+            const user = await userCollection.findOne({ email });
+
+            if (!user || user.role !== "admin") {
+                return res.status(403).send({ message: "Forbidden access" });
+            }
+            next();
+        };
+
+        const verifyCharity = async (req, res, next) => {
+            const email = req.decoded.email;
+            const user = await userCollection.findOne({ email });
+
+            if (!user || user.role !== "charity") {
+                return res.status(403).send({ message: "Forbidden access" });
+            }
+            next();
+        };
+
+        const verifyRestaurant = async (req, res, next) => {
+            const email = req.decoded.email;
+            const user = await userCollection.findOne({ email });
+
+            if (!user || user.role !== "restaurant") {
+                return res.status(403).send({ message: "Forbidden access" });
+            }
+            next();
+        };
+
         // Routes-------:
 
         // GET /donations/featured
-        app.get("/donations/featured", async (req, res) => {
+        app.get("/donations/featured", verifyFBToken, async (req, res) => {
             try {
                 const featured = await donationCollection
                     .find({ isFeatured: true, verification: "Verified" })
