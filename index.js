@@ -37,6 +37,8 @@ async function run() {
         const charityRequestCollection = client.db("foodResQ").collection("CharityRequests");
         const paymentCollection = client.db("foodResQ").collection("charityPayments");
         const donationRequestsCollection = client.db("foodResQ").collection("donationRequests");
+        const favoritesCollection = client.db("foodResQ").collection("favorites");
+        const reviewsCollection = client.db("foodResQ").collection("reviews");
 
 
         // ----------------------------------////////////--------------------------------------------------
@@ -372,27 +374,64 @@ async function run() {
 
         // for charity can req for donation from donation details page 
 
-        app.post("/donation-requests", async (req, res) => {
-            const request = req.body;
+        // app.post("/donation-requests", async (req, res) => {
+        //     const request = req.body;
 
-            // Check if the same user already requested this donation
+        //     // Check if the same user already requested this donation
+        //     const existing = await donationRequestsCollection.findOne({
+        //         donationId: request.donationId,
+        //         charityEmail: request.charityEmail,
+        //     });
+
+        //     if (existing) {
+        //         return res.status(409).send({ message: "Already requested" });
+        //     }
+
+        //     const result = await donationRequestsCollection.insertOne({
+        //         ...request,
+        //         status: "pending",
+        //         requestedAt: new Date(),
+        //     });
+
+        //     res.send(result);
+        // });
+
+
+        app.post("/donation-requests", async (req, res) => {
+            const requestInfo = req.body;
+
+            // Prevent duplicate requests
             const existing = await donationRequestsCollection.findOne({
-                donationId: request.donationId,
-                charityEmail: request.charityEmail,
+                donationId: requestInfo.donationId,
+                charityEmail: requestInfo.charityEmail,
             });
 
             if (existing) {
-                return res.status(409).send({ message: "Already requested" });
+                return res
+                    .status(409)
+                    .send({ message: "You have already requested this donation." });
             }
 
             const result = await donationRequestsCollection.insertOne({
-                ...request,
+                ...requestInfo,
                 status: "pending",
                 requestedAt: new Date(),
             });
 
             res.send(result);
         });
+
+
+        // app.get("/donation-requests/check", async (req, res) => {
+        //     const { donationId, email } = req.query;
+
+        //     const request = await donationRequestsCollection.findOne({
+        //         donationId,
+        //         charityEmail: email,
+        //     });
+
+        //     res.send({ exists: !!request });
+        // });
 
         app.get("/donation-requests/check", async (req, res) => {
             const { donationId, email } = req.query;
@@ -402,8 +441,56 @@ async function run() {
                 charityEmail: email,
             });
 
-            res.send({ exists: !!request });
+            res.send({ request }); // can be null or full object
         });
+
+
+        // For auto reject other donations
+        app.patch("/donation-requests/accept/:id", async (req, res) => {
+            const { id } = req.params;
+
+            // Accept this request
+            const result = await donationRequestsCollection.updateOne(
+                { _id: new ObjectId(id) },
+                {
+                    $set: {
+                        status: "accepted",
+                        acceptedAt: new Date(),
+                    },
+                }
+            );
+
+            // Optional: Auto-reject other requests for the same donation
+            const acceptedRequest = await donationRequestsCollection
+                .findOne({ _id: new ObjectId(id) });
+
+            if (acceptedRequest?.donationId) {
+                await donationRequestsCollection.updateMany(
+                    {
+                        donationId: acceptedRequest.donationId,
+                        _id: { $ne: new ObjectId(id) },
+                        status: "pending",
+                    },
+                    { $set: { status: "rejected" } }
+                );
+            }
+
+            res.send(result);
+        });
+
+        // For add favorites button in donation details page
+
+        app.get("/favorites/check", async (req, res) => {
+            const { email, donationId } = req.query;
+
+            const favorite = await favoritesCollection.findOne({
+                userEmail: email,
+                donationId,
+            });
+
+            res.send({ isFavorite: !!favorite });
+        });
+
 
 
         // For my requests page 
@@ -418,15 +505,41 @@ async function run() {
             res.send(result);
         });
 
+        // app.patch("/donation-requests/pickup/:id", async (req, res) => {
+        //     const { id } = req.params;
+        //     const { userEmail } = req.body;
+
+        //     const existing = await donationRequestsCollection.findOne({
+        //         _id: new ObjectId(id),
+        //     });
+
+        //     if (!existing || existing.charityEmail !== userEmail) {
+        //         return res.status(403).send({ message: "Unauthorized" });
+        //     }
+
+        //     const result = await donationRequestsCollection.updateOne(
+        //         { _id: new ObjectId(id) },
+        //         {
+        //             $set: {
+        //                 status: "picked_up",
+        //                 pickedUpAt: new Date(),
+        //             },
+        //         }
+        //     );
+
+        //     res.send(result);
+        // });
+
+
         app.patch("/donation-requests/pickup/:id", async (req, res) => {
             const { id } = req.params;
             const { userEmail } = req.body;
 
-            const existing = await donationRequestsCollection.findOne({
+            const request = await donationRequestsCollection.findOne({
                 _id: new ObjectId(id),
             });
 
-            if (!existing || existing.charityEmail !== userEmail) {
+            if (!request || request.charityEmail !== userEmail) {
                 return res.status(403).send({ message: "Unauthorized" });
             }
 
@@ -442,6 +555,7 @@ async function run() {
 
             res.send(result);
         });
+
 
 
         // For my pickup page
@@ -514,6 +628,91 @@ async function run() {
             res.send(result);
         });
 
+
+        // For user favorite donations
+        app.get("/favorites/:email", async (req, res) => {
+            const result = await favoritesCollection
+                .find({ userEmail: req.params.email })
+                .sort({ addedAt: -1 })
+                .toArray();
+
+            res.send(result);
+        });
+
+        app.post("/favorites", async (req, res) => {
+            const favorite = req.body;
+
+            // Check for duplicate
+            const exists = await favoritesCollection.findOne({
+                userEmail: favorite.userEmail,
+                donationId: favorite.donationId,
+            });
+
+            if (exists) {
+                return res.status(409).send({ message: "Already in favorites" });
+            }
+
+            const result = await favoritesCollection.insertOne({
+                ...favorite,
+                addedAt: new Date(),
+            });
+
+            res.send(result);
+        });
+
+        // app.post("/favorites", async (req, res) => {
+        //     const fav = req.body;
+        //     const exists = await db.collection("favorites").findOne({
+        //         userEmail: fav.userEmail,
+        //         donationId: fav.donationId,
+        //     });
+        //     if (exists) {
+        //         return res.status(409).send({ message: "Already in favorites" });
+        //     }
+        //     const result = await db.collection("favorites").insertOne({ ...fav, addedAt: new Date() });
+        //     res.send(result);
+        // });
+
+
+        app.delete("/favorites", async (req, res) => {
+            const { userEmail, donationId } = req.query;
+
+            const result = await favoritesCollection.deleteOne({
+                userEmail,
+                donationId,
+            });
+
+            res.send(result);
+        });
+
+        // My reviews page for user dashboard
+        app.get("/reviews/by-user/:email", async (req, res) => {
+            const email = req.params.email;
+
+            const result = await reviewsCollection
+                .find({ userEmail: email })
+                .sort({ createdAt: -1 })
+                .toArray();
+
+            res.send(result);
+        });
+
+        app.post("/reviews", async (req, res) => {
+            const review = req.body;
+
+            // Prevent multiple reviews by same user on same donation
+            const exists = await reviewsCollection.findOne({
+                userEmail: review.userEmail,
+                donationId: review.donationId,
+            });
+
+            if (exists) {
+                return res.status(409).send({ message: "You've already reviewed this donation." });
+            }
+
+            const result = await reviewsCollection.insertOne(review);
+            res.send(result);
+        });
 
 
 
