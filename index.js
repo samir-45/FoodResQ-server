@@ -144,7 +144,7 @@ async function run() {
 
 
         // POST /donations
-        app.post("/donations", async (req, res) => {
+        app.post("/donations", verifyFBToken, verifyRestaurant, async (req, res) => {
             const donation = req.body;
             const result = await donationCollection.insertOne(donation);
             res.send(result);
@@ -152,12 +152,12 @@ async function run() {
 
 
         // Admin manage donation page stuffs /////////Start///////////////////
-        app.get("/donations/all-admin", async (req, res) => {
+        app.get("/donations/all-admin", verifyFBToken, verifyAdmin, async (req, res) => {
             const all = await donationCollection.find().sort({ createdAt: -1 }).toArray();
             res.send(all);
         });
 
-        app.patch("/donations/verify/:id", async (req, res) => {
+        app.patch("/donations/verify/:id", verifyFBToken, verifyAdmin, async (req, res) => {
             const id = req.params.id;
             const result = await donationCollection.updateOne(
                 { _id: new ObjectId(id) },
@@ -166,7 +166,7 @@ async function run() {
             res.send(result);
         });
 
-        app.patch("/donations/reject/:id", async (req, res) => {
+        app.patch("/donations/reject/:id", verifyFBToken, verifyAdmin, async (req, res) => {
             const id = req.params.id;
             const result = await donationCollection.updateOne(
                 { _id: new ObjectId(id) },
@@ -176,7 +176,7 @@ async function run() {
         });
 
         // For admin featured donation page
-        app.patch("/donations/feature/:id", async (req, res) => {
+        app.patch("/donations/feature/:id", verifyFBToken, verifyAdmin, async (req, res) => {
             const id = req.params.id;
             const { makeFeatured } = req.body;
 
@@ -188,7 +188,7 @@ async function run() {
             res.send(result);
         });
 
-        app.get("/donations/verified", async (req, res) => {
+        app.get("/donations/verified", verifyFBToken, verifyAdmin, async (req, res) => {
             const result = await donationCollection
                 .find({ verification: "Verified" })
                 .sort({ createdAt: -1 })
@@ -201,14 +201,14 @@ async function run() {
 
 
         // get reausturant Donations
-        app.get('/donations/restaurant/:email', async (req, res) => {
+        app.get('/donations/restaurant/:email',verifyFBToken, verifyRestaurant, async (req, res) => {
             const email = req.params.email;
             const donations = await donationCollection.find({ restaurantEmail: email }).sort({ createdAt: -1 }).toArray();
             res.send(donations);
         });
 
         // Delete reaustarunt given donations
-        app.delete('/donations/:id', async (req, res) => {
+        app.delete('/donations/:id', verifyFBToken, verifyAdmin, async (req, res) => {
             const id = req.params.id;
             const result = await donationCollection.deleteOne({ _id: new ObjectId(id) });
             res.send(result);
@@ -257,7 +257,7 @@ async function run() {
         });
 
         // Charity request ----------------------------------------------------------------------------
-        app.post("/charity-requests", async (req, res) => {
+        app.post("/charity-requests",verifyFBToken, verifyAdmin, async (req, res) => {
             const newRequest = req.body;
             const existing = await charityRequestCollection.findOne({ userEmail: newRequest.userEmail });
 
@@ -296,7 +296,7 @@ async function run() {
 
 
         // Get charity profile details
-        app.get("/requests/charity/:email", async (req, res) => {
+        app.get("/requests/charity/:email", verifyFBToken, verifyCharity, async (req, res) => {
             const email = req.params.email;
             const requests = await requestCollection
                 .find({ charityEmail: email })
@@ -305,7 +305,7 @@ async function run() {
             res.send(requests);
         });
 
-        app.get("/donations/received/:email", async (req, res) => {
+        app.get("/donations/received/:email",verifyFBToken, verifyCharity, async (req, res) => {
             const email = req.params.email;
             const donations = await donationCollection
                 .find({ receivedBy: email }) // assuming you store this on pickup
@@ -315,7 +315,7 @@ async function run() {
         });
 
         // For admin dasboard
-        app.get("/users", async (req, res) => {
+        app.get("/users", verifyFBToken, async (req, res) => {
             const allUsers = await userCollection.find().toArray();
             res.send(allUsers);
         });
@@ -416,7 +416,7 @@ async function run() {
         });
 
 
-        app.patch("/charity-requests/approve/:email", async (req, res) => {
+        app.patch("/charity-requests/approve/:email", verifyFBToken, verifyAdmin, async (req, res) => {
             const email = req.params.email;
 
             // 1. Update approval status
@@ -447,7 +447,7 @@ async function run() {
         });
 
         // Get charity payment history
-        app.get("/charity-payments/:email", async (req, res) => {
+        app.get("/charity-payments/:email",verifyFBToken, async (req, res) => {
             const email = req.params.email;
             const result = await paymentCollection.find({ userEmail: email }).sort({ paidAt: -1 }).toArray();
             res.send(result);
@@ -575,7 +575,7 @@ async function run() {
 
 
         // For my requests page 
-        app.get("/donation-requests/user/:email", async (req, res) => {
+        app.get("/donation-requests/user/:email", verifyFBToken, verifyCharity, async (req, res) => {
             const email = req.params.email;
 
             const result = await donationRequestsCollection
@@ -612,7 +612,7 @@ async function run() {
         // });
 
 
-        app.patch("/donation-requests/pickup/:id", async (req, res) => {
+        app.patch("/donation-requests/pickup/:id", verifyFBToken, verifyCharity, async (req, res) => {
             const { id } = req.params;
             const { userEmail } = req.body;
 
@@ -640,7 +640,7 @@ async function run() {
 
 
         // For my pickup page
-        app.get("/donation-requests/picked-up/:email", async (req, res) => {
+        app.get("/donation-requests/picked-up/:email", verifyFBToken, verifyCharity, async (req, res) => {
             const email = req.params.email;
 
             const result = await donationRequestsCollection
@@ -653,7 +653,7 @@ async function run() {
 
         // For requested donation page 
 
-        app.get("/donation-requests/by-restaurant/:email", async (req, res) => {
+        app.get("/donation-requests/by-restaurant/:email", verifyFBToken, verifyCharity, async (req, res) => {
             const email = req.params.email;
 
             const result = await donationRequestsCollection.find({
@@ -663,7 +663,7 @@ async function run() {
             res.send(result);
         });
 
-        app.patch("/donation-requests/accept/:id", async (req, res) => {
+        app.patch("/donation-requests/accept/:id", verifyFBToken, verifyCharity, async (req, res) => {
             const { id } = req.params;
 
             const result = await donationRequestsCollection.updateOne(
@@ -679,7 +679,7 @@ async function run() {
             res.send(result);
         });
 
-        app.patch("/donation-requests/reject/:id", async (req, res) => {
+        app.patch("/donation-requests/reject/:id", verifyFBToken, verifyCharity, async (req, res) => {
             const { id } = req.params;
 
             const result = await donationRequestsCollection.updateOne(
@@ -698,7 +698,7 @@ async function run() {
 
         // For recieved donation page
 
-        app.get("/donation-requests/received/:email", async (req, res) => {
+        app.get("/donation-requests/received/:email",verifyFBToken, verifyCharity, async (req, res) => {
             const email = req.params.email;
 
             const result = await donationRequestsCollection
