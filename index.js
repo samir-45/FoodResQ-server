@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const app = express();
@@ -34,6 +35,8 @@ async function run() {
         const requestCollection = client.db("foodResQ").collection("requests");
         const userCollection = client.db("foodResQ").collection("users");
         const charityRequestCollection = client.db("foodResQ").collection("CharityRequests");
+        const paymentCollection = client.db("foodResQ").collection("charityPayments");
+        const donationRequestsCollection = client.db("foodResQ").collection("donationRequests");
 
 
         // ----------------------------------////////////--------------------------------------------------
@@ -245,6 +248,274 @@ async function run() {
 
             res.send(result);
         });
+
+        // Stripe payment
+
+        // app.post("/create-payment-intent-charity", async (req, res) => {
+        //     const { amountInCents, email } = req.body;
+
+        //     const paymentIntent = await stripe.paymentIntents.create({
+        //         amount: amountInCents,
+        //         currency: "usd",
+        //         payment_method_types: ["card"],
+        //         receipt_email: email,
+        //     });
+
+        //     res.send({ clientSecret: paymentIntent.client_secret });
+        // });
+
+
+        // app.post("/create-payment-intent-charity", async (req, res) => {
+        //     try {
+        //         const { amountInCents, email } = req.body;
+
+        //         const paymentIntent = await stripe.paymentIntents.create({
+        //             amount: amountInCents,
+        //             currency: "usd",
+        //             payment_method_types: ["card"],
+        //             receipt_email: email,
+        //         });
+
+        //         res.send({ clientSecret: paymentIntent.client_secret });
+        //     } catch (err) {
+        //         console.error("Payment intent error:", err.message);
+        //         res.status(500).send({ error: "Payment Intent Failed" });
+        //     }
+        // });
+
+        app.post("/create-payment-intent-charity", async (req, res) => {
+            try {
+                const { amountInCents, email } = req.body;
+
+                if (!amountInCents || !email) {
+                    return res.status(400).send({ error: "Missing amount or email" });
+                }
+
+                const paymentIntent = await stripe.paymentIntents.create({
+                    amount: amountInCents,
+                    currency: "usd",
+                    payment_method_types: ["card"],
+                    receipt_email: email,
+                });
+
+                res.send({ clientSecret: paymentIntent.client_secret });
+            } catch (err) {
+                console.error("❌ Payment intent error:", err.message);
+                res.status(500).send({ error: err.message });
+            }
+        });
+
+
+
+
+        app.patch("/charity-requests/:email", async (req, res) => {
+            const email = req.params.email;
+
+            const result = await charityRequestCollection.updateOne(
+                { userEmail: email },
+                { $set: { status: "paid" } }
+            );
+
+            res.send(result);
+        });
+
+        app.post("/charity-payments", async (req, res) => {
+            const paymentData = req.body;
+            const result = await paymentCollection.insertOne(paymentData);
+            res.send({ insertedId: result.insertedId });
+        });
+
+        // For admin manage charity request
+
+        app.get("/charity-requests", async (req, res) => {
+            const requests = await charityRequestCollection.find().sort({ requestedAt: -1 }).toArray();
+            res.send(requests);
+        });
+
+
+        app.patch("/charity-requests/approve/:email", async (req, res) => {
+            const email = req.params.email;
+
+            // 1. Update approval status
+            const updateReq = await charityRequestCollection.updateOne(
+                { userEmail: email },
+                { $set: { approval: "approved" } }
+            );
+
+            // 2. Update user role
+            const updateUser = await userCollection.updateOne(
+                { email },
+                { $set: { role: "charity" } }
+            );
+
+            res.send({ requestUpdated: updateReq.modifiedCount, userUpdated: updateUser.modifiedCount });
+        });
+
+
+        app.patch("/charity-requests/reject/:email", async (req, res) => {
+            const email = req.params.email;
+
+            const result = await charityRequestCollection.updateOne(
+                { userEmail: email },
+                { $set: { approval: "rejected" } }
+            );
+
+            res.send(result);
+        });
+
+        // Get charity payment history
+        app.get("/charity-payments/:email", async (req, res) => {
+            const email = req.params.email;
+            const result = await paymentCollection.find({ userEmail: email }).sort({ paidAt: -1 }).toArray();
+            res.send(result);
+        });
+
+        // for charity can req for donation from donation details page 
+
+        app.post("/donation-requests", async (req, res) => {
+            const request = req.body;
+
+            // Check if the same user already requested this donation
+            const existing = await donationRequestsCollection.findOne({
+                donationId: request.donationId,
+                charityEmail: request.charityEmail,
+            });
+
+            if (existing) {
+                return res.status(409).send({ message: "Already requested" });
+            }
+
+            const result = await donationRequestsCollection.insertOne({
+                ...request,
+                status: "pending",
+                requestedAt: new Date(),
+            });
+
+            res.send(result);
+        });
+
+        app.get("/donation-requests/check", async (req, res) => {
+            const { donationId, email } = req.query;
+
+            const request = await donationRequestsCollection.findOne({
+                donationId,
+                charityEmail: email,
+            });
+
+            res.send({ exists: !!request });
+        });
+
+
+        // For my requests page 
+        app.get("/donation-requests/user/:email", async (req, res) => {
+            const email = req.params.email;
+
+            const result = await donationRequestsCollection
+                .find({ charityEmail: email })
+                .sort({ requestedAt: -1 })
+                .toArray();
+
+            res.send(result);
+        });
+
+        app.patch("/donation-requests/pickup/:id", async (req, res) => {
+            const { id } = req.params;
+            const { userEmail } = req.body;
+
+            const existing = await donationRequestsCollection.findOne({
+                _id: new ObjectId(id),
+            });
+
+            if (!existing || existing.charityEmail !== userEmail) {
+                return res.status(403).send({ message: "Unauthorized" });
+            }
+
+            const result = await donationRequestsCollection.updateOne(
+                { _id: new ObjectId(id) },
+                {
+                    $set: {
+                        status: "picked_up",
+                        pickedUpAt: new Date(),
+                    },
+                }
+            );
+
+            res.send(result);
+        });
+
+
+        // For my pickup page
+        app.get("/donation-requests/picked-up/:email", async (req, res) => {
+            const email = req.params.email;
+
+            const result = await donationRequestsCollection
+                .find({ charityEmail: email, status: "picked_up" })
+                .sort({ pickedUpAt: -1 })
+                .toArray();
+
+            res.send(result);
+        });
+
+        // For requested donation page 
+
+        app.get("/donation-requests/by-restaurant/:email", async (req, res) => {
+            const email = req.params.email;
+
+            const result = await donationRequestsCollection.find({
+                restaurantEmail: email,
+            }).sort({ requestedAt: -1 }).toArray();
+
+            res.send(result);
+        });
+
+        app.patch("/donation-requests/accept/:id", async (req, res) => {
+            const { id } = req.params;
+
+            const result = await donationRequestsCollection.updateOne(
+                { _id: new ObjectId(id) },
+                {
+                    $set: {
+                        status: "accepted",
+                        acceptedAt: new Date(),
+                    },
+                }
+            );
+
+            res.send(result);
+        });
+
+        app.patch("/donation-requests/reject/:id", async (req, res) => {
+            const { id } = req.params;
+
+            const result = await donationRequestsCollection.updateOne(
+                { _id: new ObjectId(id) },
+                {
+                    $set: {
+                        status: "rejected",
+                        rejectedAt: new Date(),
+                    },
+                }
+            );
+
+            res.send(result);
+        });
+
+
+        // For recieved donation page
+
+        app.get("/donation-requests/received/:email", async (req, res) => {
+            const email = req.params.email;
+
+            const result = await donationRequestsCollection
+                .find({ charityEmail: email, status: "picked_up" })
+                .sort({ pickedUpAt: -1 })
+                .toArray();
+
+            res.send(result);
+        });
+
+
+
 
 
 
