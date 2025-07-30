@@ -13,13 +13,14 @@ app.use(express.json());
 
 
 
-const serviceAccount = require("./firebase-admin-key.json");
+const decodedKey = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8');
+const serviceAccount = JSON.parse(decodedKey);
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
 
-module.exports = admin;
+// module.exports = admin;
 
 
 
@@ -40,7 +41,7 @@ const client = new MongoClient(uri, {
 async function run() {
     try {
         // Connect the client to the server	(optional starting in v4.7)
-        await client.connect();
+        // await client.connect();   // Its need comment
 
         // Database------:
         const donationCollection = client.db("foodResQ").collection("donations");
@@ -127,7 +128,7 @@ async function run() {
         // Routes-------:
 
         // GET /donations/featured
-        app.get("/donations/featured", verifyFBToken, async (req, res) => {
+        app.get("/donations/featured", async (req, res) => {
             try {
                 const featured = await donationCollection
                     .find({ isFeatured: true, verification: "Verified" })
@@ -257,7 +258,7 @@ async function run() {
         });
 
         // Charity request ----------------------------------------------------------------------------
-        app.post("/charity-requests",verifyFBToken, verifyAdmin, async (req, res) => {
+        app.post("/charity-requests", async (req, res) => {
             const newRequest = req.body;
             const existing = await charityRequestCollection.findOne({ userEmail: newRequest.userEmail });
 
@@ -332,39 +333,6 @@ async function run() {
             res.send(result);
         });
 
-        // Stripe payment
-
-        // app.post("/create-payment-intent-charity", async (req, res) => {
-        //     const { amountInCents, email } = req.body;
-
-        //     const paymentIntent = await stripe.paymentIntents.create({
-        //         amount: amountInCents,
-        //         currency: "usd",
-        //         payment_method_types: ["card"],
-        //         receipt_email: email,
-        //     });
-
-        //     res.send({ clientSecret: paymentIntent.client_secret });
-        // });
-
-
-        // app.post("/create-payment-intent-charity", async (req, res) => {
-        //     try {
-        //         const { amountInCents, email } = req.body;
-
-        //         const paymentIntent = await stripe.paymentIntents.create({
-        //             amount: amountInCents,
-        //             currency: "usd",
-        //             payment_method_types: ["card"],
-        //             receipt_email: email,
-        //         });
-
-        //         res.send({ clientSecret: paymentIntent.client_secret });
-        //     } catch (err) {
-        //         console.error("Payment intent error:", err.message);
-        //         res.status(500).send({ error: "Payment Intent Failed" });
-        //     }
-        // });
 
         app.post("/create-payment-intent-charity", async (req, res) => {
             try {
@@ -804,8 +772,8 @@ async function run() {
 
         // ----------------------------------////////////--------------------------------------------------
         // Send a ping to confirm a successful connection
-        await client.db("admin").command({ ping: 1 });
-        console.log("Pinged your deployment. You successfully connected to MongoDB!");
+        // await client.db("admin").command({ ping: 1 });
+        // console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
         // Ensures that the client will close when you finish/error
         // await client.close();
