@@ -41,7 +41,7 @@ const client = new MongoClient(uri, {
 async function run() {
     try {
         // Connect the client to the server	(optional starting in v4.7)
-        // await client.connect();   // Its need comment
+        await client.connect();   // Its need comment
 
         // Database------:
         const donationCollection = client.db("foodResQ").collection("donations");
@@ -202,7 +202,7 @@ async function run() {
 
 
         // get reausturant Donations
-        app.get('/donations/restaurant/:email',verifyFBToken, verifyRestaurant, async (req, res) => {
+        app.get('/donations/restaurant/:email', verifyFBToken, verifyRestaurant, async (req, res) => {
             const email = req.params.email;
             const donations = await donationCollection.find({ restaurantEmail: email }).sort({ createdAt: -1 }).toArray();
             res.send(donations);
@@ -306,7 +306,7 @@ async function run() {
             res.send(requests);
         });
 
-        app.get("/donations/received/:email",verifyFBToken, verifyCharity, async (req, res) => {
+        app.get("/donations/received/:email", verifyFBToken, verifyCharity, async (req, res) => {
             const email = req.params.email;
             const donations = await donationCollection
                 .find({ receivedBy: email }) // assuming you store this on pickup
@@ -415,7 +415,7 @@ async function run() {
         });
 
         // Get charity payment history
-        app.get("/charity-payments/:email",verifyFBToken, async (req, res) => {
+        app.get("/charity-payments/:email", verifyFBToken, async (req, res) => {
             const email = req.params.email;
             const result = await paymentCollection.find({ userEmail: email }).sort({ paidAt: -1 }).toArray();
             res.send(result);
@@ -666,7 +666,7 @@ async function run() {
 
         // For recieved donation page
 
-        app.get("/donation-requests/received/:email",verifyFBToken, verifyCharity, async (req, res) => {
+        app.get("/donation-requests/received/:email", verifyFBToken, verifyCharity, async (req, res) => {
             const email = req.params.email;
 
             const result = await donationRequestsCollection
@@ -763,6 +763,12 @@ async function run() {
             res.send(result);
         });
 
+        // Chart visualize
+        app.get('/donations/by-email/:email', verifyFBToken, verifyRestaurant, async (req, res) => {
+            const { email } = req.params;
+            const donations = await donationCollection.find({ donorEmail: email, verification: 'Verified' }).toArray();
+            res.send(donations);
+        });
 
 
 
@@ -772,8 +778,8 @@ async function run() {
 
         // ----------------------------------////////////--------------------------------------------------
         // Send a ping to confirm a successful connection
-        // await client.db("admin").command({ ping: 1 });
-        // console.log("Pinged your deployment. You successfully connected to MongoDB!");
+        await client.db("admin").command({ ping: 1 });
+        console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
         // Ensures that the client will close when you finish/error
         // await client.close();
